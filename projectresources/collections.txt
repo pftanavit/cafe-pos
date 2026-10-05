@@ -1,0 +1,126 @@
+Top-level collections:
+
+users
+/{uid}
+uid string PK
+username string
+role "admin" | "employee" | "customer"
+createdAt Timestamp
+Note: Doc ID = Firebase Auth UID. No password stored. Written only by Cloud Functions on first login.
+
+ingredients
+/{ingredientId}
+ingredientId string (auto-id) PK
+name string
+amount float
+unit string("ml" | "g" | "kg" | "pcs" …)
+updatedAt Timestamp
+Note: Decremented by Flask batch write when order moves unconfirmed → on_queue. Restored on cancellation.
+
+discountCodes
+/{code}
+code string — doc ID itself PK
+type "percentage" | "fixed"
+value float
+used boolean
+usedInOrderId string | null FK
+createdAt Timestamp
+Note: Doc ID = the code string → O(1) lookup. Apply via Firestore transaction to prevent double-use.
+
+menuItems
+/{menuItemId}
+menuItemId string (auto-id) PK
+name string
+recipe string — step-by-step barista instructions
+basePrice float
+isAvailable boolean — set by Cloud Function CF
+updatedAt Timestamp
+ingredientSlots array — see slot types below
+Note: ingredientSlots is embedded (not a subcollection) so the full menu item loads in 1 read. isAvailable is recomputed by a Cloud Function triggered on every ingredients write.
+
+orders
+/{orderId}
+orderId string (auto-id) PK
+status "unconfirmed" | "on_queue" | "ongoing" | "completed" | "canceled"
+employeeId string FK
+customerId string | null FK
+discountCode string | null FK
+discountAmount float | null
+subtotal float
+totalPrice float
+isTakeaway boolean
+appearanceTags string[] — e.g. ["glasses","blue shirt"]
+notes string | null
+createdAt Timestamp
+startedAt Timestamp | null — set on → ongoing
+completedAt Timestamp | null — set on → completed/canceled
+Note: Queue is a real-time onSnapshot query filtered status in ["on_queue","ongoing"]. Takeaway priority and overlap grouping computed in Flask sort logic — no stored priority field needed.
+
+Subcollections:
+
+orderItemssubcollection
+orders/{orderId}/orderItems/{itemId}
+itemId string (auto-id) PK
+menuItemId string FK
+menuItemName string — snapshot at order time snap
+recipeSnapshot string — full recipe text at order time snap
+basePrice float — snapshot at order time snap
+itemPrice float — after customization pricing applied
+customizations map — keyed by slot label, see below
+Note: All name/recipe/price fields are snapshots — if a menu item is edited later, historical orders remain accurate. itemPrice resolved by Flask: if any chosen option has overridePrice set, that wins; otherwise basePrice + sum of all priceMarkups.
+
+Embedded structures (not separate collections):
+ingredientSlot — normal
+inside menuItems.ingredientSlots[]
+type "normal"
+ingredientId string FK
+ingredientName string — denormalized
+amount float
+unit string
+
+ingredientSlot — customizable amount
+inside menuItems.ingredientSlots[]
+type "customizable_amount"
+ingredientId string FK
+ingredientName string — denormalized
+unit string
+defaultLevelIndex int
+levels
+array of {label: string, amount: float}
+Note: e.g. levels: [{label:"None",amount:0},{label:"Light",amount:5},{label:"Normal",amount:10},{label:"Extra",amount:15}]
+
+ingredientSlot — customizable options
+inside menuItems.ingredientSlots[]
+type "customizable_options"
+label string — e.g. "Milk type"
+options array — see option fields below
+
+Note: Each option: { ingredientId, ingredientName, amount, unit, isDefault, priceMarkup: float|null, overridePrice: float|null }
+Note: Price rule: if overridePrice is set → use it, ignore basePrice entirely. Else → basePrice + priceMarkup.
+
+customization entry (amount)
+inside orderItems.customizations map
+[slot label] map key — e.g. "Sweetness"
+type "customizable_amount"
+chosenLabel string — e.g. "Light"
+chosenAmount float — e.g. 5
+unit string
+ingredientId string
+
+customization entry (options)
+inside orderItems.customizations map
+[slot label] map key — e.g. "Milk type"
+type "customizable_options"
+chosenIngredientId string FK
+chosenIngredientName string — snapshot snap
+chosenAmount float
+unit string
+priceMarkup float | null
+overridePrice float | null
+
+PK - Document ID / primary key
+FK - Reference to another document
+snap - Snapshot — value copied at order time, not a live reference
+CF - Written by Cloud Function, not the client
+top-level - Root Firestore collection
+subcollection - Nested under orders/{orderId}

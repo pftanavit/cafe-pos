@@ -1,0 +1,33 @@
+# Firebase secret keys
+serviceAccountKey.json
+backend/serviceAccountKey.json
+.env
+
+# Python artifacts
+__pycache__/
+node_modules/
+.expo/
+*.keystore
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+backend/.venv/
+venv/
+.env*
+!.env.example
+
+# IDE, build, and test artifacts
+.idea/
+web/dist/
+coverage/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
